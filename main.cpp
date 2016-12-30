@@ -8,7 +8,7 @@ using namespace std;
 using namespace cv;
 
 #define MIN_HESSIAN 400
-#define NUMBER_OF_FILES 500
+#define NUMBER_OF_FILES 10000
 
 Mat trainingData, labels, training;
 
@@ -21,65 +21,70 @@ vector< Mat > loadImages() {
 	for (int i = 1; i <= NUMBER_OF_FILES; i++)
 	{
 		img = imread("../train/" + to_string(i) + ".png", CV_LOAD_IMAGE_GRAYSCALE);
+		if (!img.data)
+			while (true);
 		//flatten the image
 		//img.resize(1);
 		vec.push_back(img);
+		cout << i << "/" << NUMBER_OF_FILES << "\n";
 	}
+	cout << vec.size();
 	return vec;
 }
 
-void loadLabels() {
-	ifstream file("../labels/trainLabels.csv");
-	string line;
-
-	for (int i = 0; i < NUMBER_OF_FILES - 1; i++) {
-		getline(file, line);
-		string label = line.substr(line.find(",") + 1);
-		if (label == "airplane")
-			labels.push_back(0);
-		else if (label == "automobile")
-			labels.push_back(1);
-		else if (label == "bird")
-			labels.push_back(2);
-		else if (label == "cat")
-			labels.push_back(3);
-		else if (label == "deer")
-			labels.push_back(4);
-		else if (label == "dog")
-			labels.push_back(5);
-		else if (label == "frog")
-			labels.push_back(6);
-		else if (label == "horse")
-			labels.push_back(7);
-		else if (label == "ship")
-			labels.push_back(8);
-		else if (label == "truck")
-			labels.push_back(9);
-	}
-
+int parseLabel(string label) {
+	if (label == "airplane")
+		return 0;
+	else if (label == "automobile")
+		return 1;
+	else if (label == "bird")
+		return 2;
+	else if (label == "cat")
+		return 3;
+	else if (label == "deer")
+		return 4;
+	else if (label == "dog")
+		return 5;
+	else if (label == "frog")
+		return 6;
+	else if (label == "horse")
+		return 7;
+	else if (label == "ship")
+		return 8;
+	else if (label == "truck")
+		return 9;
 }
 
 Mat sift(vector<Mat> images) {
 	Mat training;
-	for(int i = 0; i < NUMBER_OF_FILES; i++)
-		if (images[i].data)
-		{
-			Ptr<FeatureDetector> detector = new cv::SiftFeatureDetector();
-			Ptr<DescriptorExtractor> extractor = new cv::SiftDescriptorExtractor();
-			vector<KeyPoint> kps;
-			Mat descriptor;
-			Mat dsc;
-			detector->detect(images[i], kps);
-			extractor->compute(images[i], kps, dsc);
+	ifstream file("../labels/trainLabels.csv");
+	string line;
+	int label;
+	for(int i = 0; i < NUMBER_OF_FILES; i++) {
+		getline(file, line);
+		label = parseLabel(line.substr(line.find(",") + 1));
+		Ptr<FeatureDetector> detector = new cv::SiftFeatureDetector();
+		Ptr<DescriptorExtractor> extractor = new cv::SiftDescriptorExtractor();
+		vector<KeyPoint> kps;
+		Mat descriptor;
+		Mat dsc;
+		detector->detect(images[i], kps);
+		extractor->compute(images[i], kps, dsc);
+		if (!dsc.empty()) {
 			training.push_back(dsc);
+			labels.push_back(label);
 		}
+	}
+	cout << labels.size();
 
 	return training;
 }
 
-void bagOfWords(vector<Mat> images) {
+BOWImgDescriptorExtractor bagOfWords(vector<Mat> images) {
 	Mat dictionary;
 	BOWKMeansTrainer bow(10, termCrit, 2, 0);
+	//cout << labels.size();
+	cout << trainingData.size();
 	dictionary = bow.cluster(training);
 	Ptr<DescriptorMatcher> dsc_matcher(new FlannBasedMatcher);
 	Ptr<DescriptorExtractor> dsc_train = new SiftDescriptorExtractor();
@@ -98,26 +103,37 @@ void bagOfWords(vector<Mat> images) {
 		trainingData.push_back(dsc);
 	}
 
+	return bowDescExtractor;
+
 }
 
 int main()
 {
 	vector<Mat> images = loadImages();
-	loadLabels();
 
 	training = sift(images);
-	bagOfWords(images);
+	BOWImgDescriptorExtractor bow = bagOfWords(images);
 		
 	bool use_knn = 1;	
 	if (use_knn) {
 		CvKNearest *knn;
+		cout << "Now training KNN...\n";
 		knn = new KNearest(trainingData, labels, Mat(), false, 5);
-		cout << "trainingData:" << trainingData.size();
-		cout << "labels:" << labels.size();
-	}
+		cout << "KNN trained. Now testing...\n";
 
-	cout << trainingData.size();
-	cout << labels.size();
+		
+
+		Mat test = imread("../train/" + to_string(NUMBER_OF_FILES + 1) + ".png", CV_LOAD_IMAGE_GRAYSCALE);
+		vector<KeyPoint> kps_test;
+		Ptr<FeatureDetector> feat_test = new SiftFeatureDetector();
+		Mat dsc_test;
+		feat_test->detect(test, kps_test);
+		bow.compute(test, kps_test, dsc_test);
+		int result = 1;
+		Mat results;
+		knn->find_nearest(dsc_test,result,results,Mat(),Mat());
+		cout << "Image:" << NUMBER_OF_FILES + 1 << "is a " << results;
+	}
 	while (true);
 	return 0;
 }
