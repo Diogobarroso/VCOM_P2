@@ -8,11 +8,11 @@ using namespace std;
 using namespace cv;
 
 #define MIN_HESSIAN 400
-#define NUMBER_OF_FILES 10000
+#define NUMBER_OF_FILES 40000
 
 Mat trainingData, labels, training;
 
-TermCriteria termCrit(CV_TERMCRIT_ITER, 1000, 0.001);
+TermCriteria termCrit(CV_TERMCRIT_ITER, 1500, 0.0001);
 
 vector< Mat > loadImages() {
 	vector<Mat> vec;
@@ -82,9 +82,8 @@ Mat sift(vector<Mat> images) {
 
 BOWImgDescriptorExtractor bagOfWords(vector<Mat> images) {
 	Mat dictionary;
-	BOWKMeansTrainer bow(10, termCrit, 2, 0);
+	BOWKMeansTrainer bow(10, termCrit, 3, 0);
 	//cout << labels.size();
-	cout << trainingData.size();
 	dictionary = bow.cluster(training);
 	Ptr<DescriptorMatcher> dsc_matcher(new FlannBasedMatcher);
 	Ptr<DescriptorExtractor> dsc_train = new SiftDescriptorExtractor();
@@ -103,6 +102,7 @@ BOWImgDescriptorExtractor bagOfWords(vector<Mat> images) {
 		trainingData.push_back(dsc);
 	}
 
+	cout << trainingData.size();
 	return bowDescExtractor;
 
 }
@@ -122,17 +122,18 @@ int main()
 		cout << "KNN trained. Now testing...\n";
 
 		
-
-		Mat test = imread("../train/" + to_string(NUMBER_OF_FILES + 1) + ".png", CV_LOAD_IMAGE_GRAYSCALE);
-		vector<KeyPoint> kps_test;
-		Ptr<FeatureDetector> feat_test = new SiftFeatureDetector();
-		Mat dsc_test;
-		feat_test->detect(test, kps_test);
-		bow.compute(test, kps_test, dsc_test);
-		int result = 1;
-		Mat results;
-		knn->find_nearest(dsc_test,result,results,Mat(),Mat());
-		cout << "Image:" << NUMBER_OF_FILES + 1 << "is a " << results;
+		for (int i = 40020; i < 40040; i++) {
+			Mat test = imread("../train/" + to_string(i + 1) + ".png", CV_LOAD_IMAGE_GRAYSCALE);
+			vector<KeyPoint> kps_test;
+			Ptr<FeatureDetector> feat_test = new SiftFeatureDetector();
+			Mat dsc_test;
+			feat_test->detect(test, kps_test);
+			bow.compute(test, kps_test, dsc_test);
+			int result = 5;
+			Mat results;
+			knn->find_nearest(dsc_test, result, results, Mat(), Mat());
+			cout << "Image:" << i + 1 << "is a " << results << "\n";
+		}
 	}
 	while (true);
 	return 0;
