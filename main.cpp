@@ -10,13 +10,15 @@ using namespace cv;
 #define MIN_HESSIAN 400
 #define NUMBER_OF_FILES 500
 
-Mat trainingData, labels;
+Mat trainingData, labels, training;
+
+TermCriteria termCrit(CV_TERMCRIT_ITER, 1000, 0.001);
 
 vector< Mat > loadImages() {
 	vector<Mat> vec;
 	Mat img;
 
-	for (int i = 1; i <= 1000; i++)
+	for (int i = 1; i <= NUMBER_OF_FILES; i++)
 	{
 		img = imread("../train/" + to_string(i) + ".png", CV_LOAD_IMAGE_GRAYSCALE);
 		//flatten the image
@@ -30,7 +32,7 @@ void loadLabels() {
 	ifstream file("../labels/trainLabels.csv");
 	string line;
 
-	for (int i = 0; i < NUMBER_OF_FILES; i++) {
+	for (int i = 0; i < NUMBER_OF_FILES - 1; i++) {
 		getline(file, line);
 		string label = line.substr(line.find(",") + 1);
 		if (label == "airplane")
@@ -57,45 +59,65 @@ void loadLabels() {
 
 }
 
-vector<KeyPoint> surf(Mat img) {
-	SurfFeatureDetector detector(MIN_HESSIAN);
-	vector<KeyPoint> kps;
-
-	detector.detect(img, kps);
-
-	return kps;
-}
-
 Mat sift(vector<Mat> images) {
-	Mat trainingDescriptors;
-	Mat descriptor;
-	Ptr<FeatureDetector> detector = new cv::SiftFeatureDetector();
-	Ptr<DescriptorExtractor> extractor = new cv::SiftDescriptorExtractor();
-
-	for(int i = 0; i < images.size(); i++)
+	Mat training;
+	for(int i = 0; i < NUMBER_OF_FILES; i++)
 		if (images[i].data)
 		{
+			Ptr<FeatureDetector> detector = new cv::SiftFeatureDetector();
+			Ptr<DescriptorExtractor> extractor = new cv::SiftDescriptorExtractor();
 			vector<KeyPoint> kps;
+			Mat descriptor;
 			Mat dsc;
 			detector->detect(images[i], kps);
 			extractor->compute(images[i], kps, dsc);
-			trainingDescriptors.push_back(dsc);
+			training.push_back(dsc);
 		}
-	return trainingDescriptors;
+
+	return training;
+}
+
+void bagOfWords(vector<Mat> images) {
+	Mat dictionary;
+	BOWKMeansTrainer bow(10, termCrit, 2, 0);
+	dictionary = bow.cluster(training);
+	Ptr<DescriptorMatcher> dsc_matcher(new FlannBasedMatcher);
+	Ptr<DescriptorExtractor> dsc_train = new SiftDescriptorExtractor();
+	Ptr<FeatureDetector> feat_train = new SiftFeatureDetector();
+	BOWImgDescriptorExtractor bowDescExtractor(dsc_train, dsc_matcher);
+
+	bowDescExtractor.setVocabulary(dictionary);
+
+	for (int i = 0; i < NUMBER_OF_FILES; i++) {
+		Ptr<FeatureDetector> feat_train = new SiftFeatureDetector();
+		vector<KeyPoint> kps;
+		feat_train->detect(images[i], kps);
+		Mat dsc;
+		bowDescExtractor.compute(images[i], kps, dsc);
+
+		trainingData.push_back(dsc);
+	}
+
 }
 
 int main()
 {
 	vector<Mat> images = loadImages();
+	loadLabels();
 
-	trainingData = sift(images);
-
+	training = sift(images);
+	bagOfWords(images);
 		
-	bool use_knn = 0;	
+	bool use_knn = 1;	
 	if (use_knn) {
-		CvKNearest knn;
-		knn.train(trainingData, labels, Mat(), false, 32, false);
+		CvKNearest *knn;
+		knn = new KNearest(trainingData, labels, Mat(), false, 5);
+		cout << "trainingData:" << trainingData.size();
+		cout << "labels:" << labels.size();
 	}
 
+	cout << trainingData.size();
+	cout << labels.size();
+	while (true);
 	return 0;
 }
