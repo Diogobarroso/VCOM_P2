@@ -14,7 +14,8 @@ Mat trainingData, labels, training;
 
 TermCriteria termCrit(CV_TERMCRIT_ITER, 1000, 0.001);
 
-vector< Mat > loadImages() {
+vector<Mat> loadImages()
+{
 	vector<Mat> vec;
 	Mat img;
 
@@ -32,7 +33,8 @@ vector< Mat > loadImages() {
 	return vec;
 }
 
-int parseLabel(string label) {
+int parseLabel(string label)
+{
 	if (label == "airplane")
 		return 0;
 	else if (label == "automobile")
@@ -55,22 +57,25 @@ int parseLabel(string label) {
 		return 9;
 }
 
-Mat sift(vector<Mat> images) {
+Mat sift(vector<Mat> images)
+{
 	Mat training;
 	ifstream file("../labels/trainLabels.csv");
 	string line;
 	int label;
-	for(int i = 0; i < NUMBER_OF_FILES; i++) {
+	for (int i = 0; i < NUMBER_OF_FILES; i++)
+	{
 		getline(file, line);
 		label = parseLabel(line.substr(line.find(",") + 1));
-		Ptr<FeatureDetector> detector = new cv::SiftFeatureDetector();
-		Ptr<DescriptorExtractor> extractor = new cv::SiftDescriptorExtractor();
+		Ptr<FeatureDetector> detector = new SiftFeatureDetector();
+		Ptr<DescriptorExtractor> extractor = new SiftDescriptorExtractor();
 		vector<KeyPoint> kps;
 		Mat descriptor;
 		Mat dsc;
 		detector->detect(images[i], kps);
 		extractor->compute(images[i], kps, dsc);
-		if (!dsc.empty()) {
+		if (!dsc.empty())
+		{
 			training.push_back(dsc);
 			labels.push_back(label);
 		}
@@ -80,7 +85,8 @@ Mat sift(vector<Mat> images) {
 	return training;
 }
 
-BOWImgDescriptorExtractor bagOfWords(vector<Mat> images) {
+BOWImgDescriptorExtractor bagOfWords(vector<Mat> images)
+{
 	Mat dictionary;
 	BOWKMeansTrainer bow(10, termCrit, 2, 0);
 	//cout << labels.size();
@@ -93,7 +99,8 @@ BOWImgDescriptorExtractor bagOfWords(vector<Mat> images) {
 
 	bowDescExtractor.setVocabulary(dictionary);
 
-	for (int i = 0; i < NUMBER_OF_FILES; i++) {
+	for (int i = 0; i < NUMBER_OF_FILES; i++)
+	{
 		Ptr<FeatureDetector> feat_train = new SiftFeatureDetector();
 		vector<KeyPoint> kps;
 		feat_train->detect(images[i], kps);
@@ -104,7 +111,6 @@ BOWImgDescriptorExtractor bagOfWords(vector<Mat> images) {
 	}
 
 	return bowDescExtractor;
-
 }
 
 int main()
@@ -113,15 +119,16 @@ int main()
 
 	training = sift(images);
 	BOWImgDescriptorExtractor bow = bagOfWords(images);
-		
-	bool use_knn = 1;	
-	if (use_knn) {
-		CvKNearest *knn;
+
+	bool use_knn = false;
+	bool use_svm = true;
+	if (use_knn)
+	{
+		CvKNearest* knn;
 		cout << "Now training KNN...\n";
 		knn = new KNearest(trainingData, labels, Mat(), false, 5);
 		cout << "KNN trained. Now testing...\n";
 
-		
 
 		Mat test = imread("../train/" + to_string(NUMBER_OF_FILES + 1) + ".png", CV_LOAD_IMAGE_GRAYSCALE);
 		vector<KeyPoint> kps_test;
@@ -131,9 +138,86 @@ int main()
 		bow.compute(test, kps_test, dsc_test);
 		int result = 1;
 		Mat results;
-		knn->find_nearest(dsc_test,result,results,Mat(),Mat());
+		knn->find_nearest(dsc_test, result, results, Mat(), Mat());
 		cout << "Image:" << NUMBER_OF_FILES + 1 << "is a " << results;
 	}
-	while (true);
+
+	// SVM
+
+	if (use_svm)
+	{
+		Ptr<SVM> svm_linear = new SVM;
+		Ptr<SVM> svm_rbf = new SVM;
+		Ptr<SVM> svm_sig = new SVM;
+
+		CvSVMParams params_lin;
+		params_lin.svm_type = CvSVM::C_SVC;
+		params_lin.kernel_type = CvSVM::LINEAR;
+		params_lin.term_crit = termCrit;
+
+		CvSVMParams params_rbf;
+		params_rbf.svm_type = CvSVM::C_SVC;
+		params_rbf.kernel_type = CvSVM::RBF;
+		params_rbf.term_crit = termCrit;
+
+		CvSVMParams params_sig;
+		params_sig.svm_type = CvSVM::C_SVC;
+		params_sig.kernel_type = CvSVM::SIGMOID;
+		params_sig.term_crit = termCrit;
+
+		cout << "Training the SVM Linear" << endl;
+		svm_linear->train(trainingData, labels, Mat(), Mat(), params_lin);
+		cout << "SVM Linear Trained" << endl;
+
+		//cout << "Training SVM RBF" << endl;
+		//svm_rbf->train(trainingData, labels, Mat(), Mat(), params_rbf);
+		//cout << "SVM RBF Trained" << endl;
+
+		//cout << "Training the SVM Sigmoid" << endl;
+		//svm_sig->train(trainingData, labels, Mat(), Mat(), params_sig);
+		//cout << "SVM Sigmoid Trained" << endl;
+
+		cout << "trainingData:" << trainingData.size() << endl;
+		cout << "labels:" << labels.size() << endl;
+
+		float resultSVMLin;
+		float resultSVMRBF;
+		float resultSVMSig;
+
+		ofstream svm_csv("./svm_results.csv");
+		svm_csv << "id;label;\n";
+
+		for (unsigned int i = 0; i < NUMBER_OF_FILES; i++)
+		{
+			Ptr<FeatureDetector> detector = new SiftFeatureDetector();
+			Ptr<DescriptorExtractor> extractor = new SiftDescriptorExtractor();
+			vector<KeyPoint> keypoints;
+			Mat bow_descriptor;
+
+			detector->detect(images[i], keypoints);
+			bow.compute(images[i], keypoints, bow_descriptor);
+
+			try
+			{
+				resultSVMLin = svm_linear->predict(bow_descriptor);
+				//resultSVMRBF = svm_rbf->predict(bow_descriptor);
+				//resultSVMSig = svm_sig->predict(bow_descriptor);
+			}
+			catch (cv::Exception)
+			{
+				resultSVMLin = -1;
+			}
+
+			cout << "result SVMLin for image " << i << ": " << resultSVMLin << endl;
+			svm_csv << i + 1 << ";" << resultSVMLin << ";\n";
+
+			//cout << "result SVMRBF for image " << i << ": " << resultSVMLin << endl;
+			//cout << "result SVMSig for image " << i << ": " << resultSVMLin << endl;
+		}
+
+		svm_linear->save("./Results.yaml");
+	}
+
+	cin.get();
 	return 0;
 }
