@@ -3,12 +3,13 @@
 #include <opencv2/features2d/features2d.hpp>
 #include <opencv2/nonfree/features2d.hpp>
 #include <fstream>
+#include <iostream>
 
 using namespace std;
 using namespace cv;
 
 #define MIN_HESSIAN 400
-#define NUMBER_OF_FILES 40000
+#define NUMBER_OF_FILES 400
 
 Mat trainingData, labels, training;
 
@@ -119,27 +120,57 @@ int main()
 
 	training = sift(images);
 	BOWImgDescriptorExtractor bow = bagOfWords(images);
+	int choice;
 
-	bool use_knn = false;
-	bool use_svm = true;
-	if (use_knn)
-	{
-		CvKNearest* knn;
+	cout << "Choose the classifier you want to run:\n1.KNN\n2.SVM\n3.Both\n";
+	cin >> choice;
+	bool use_knn, use_svm;
+	if (choice == 1) {
+		use_knn = true;
+		use_svm = false;
+	}
+	else if (choice == 2) {
+		use_knn = false;
+		use_svm = true;
+	}
+	else if (choice == 3) {
+		use_knn = true;
+		use_svm = true;
+	}
+	else
+		return -1;
+
+	if (use_knn) {
+		CvKNearest *knn;
 		cout << "Now training KNN...\n";
 		knn = new KNearest(trainingData, labels, Mat(), false, 5);
 		cout << "KNN trained. Now testing...\n";
 
-		Mat test = imread("../train/" + to_string(NUMBER_OF_FILES + 1) + ".png", CV_LOAD_IMAGE_GRAYSCALE);
-		vector<KeyPoint> kps_test;
-		Ptr<FeatureDetector> feat_test = new SiftFeatureDetector();
-		Mat dsc_test;
-		feat_test->detect(test, kps_test);
-		bow.compute(test, kps_test, dsc_test);
-		int result = 1;
-		Mat results;
-		knn->find_nearest(dsc_test, result, results, Mat(), Mat());
-		cout << "Image:" << NUMBER_OF_FILES + 1 << "is a " << results;
+		vector<Mat> predicts;
+		for (int i = NUMBER_OF_FILES; i <= 50000; i++) {
+			Mat test = imread("../train/" + to_string(i + 1) + ".png", CV_LOAD_IMAGE_GRAYSCALE);
+			vector<KeyPoint> kps_test;
+			Ptr<FeatureDetector> feat_test = new SiftFeatureDetector();
+			Mat dsc_test;
+			feat_test->detect(test, kps_test);
+			bow.compute(test, kps_test, dsc_test);
+			int result = 5;
+			Mat results;
+			try {
+				knn->find_nearest(dsc_test, result, results, Mat(), Mat());
+				cout << "Image " << i << " is from class" << results << endl;
+			}
+			catch (cv::Exception) { cout << "Image " << i << " couldn't be classified\n"; }
+			
+		}
 
+		fstream file("results.csv", ios::out);
+
+		file << "Image ID, Class Predicted\n";
+		for (int i = NUMBER_OF_FILES; i <= 50000; i++)
+			file << i << "," << predicts[i] << "\n";
+
+		file.close();
 	}
 
 	// SVM
@@ -218,6 +249,6 @@ int main()
 		svm_linear->save("./Results.yaml");
 	}
 
-	cin.get();
+	getchar();
 	return 0;
 }
